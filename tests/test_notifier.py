@@ -69,6 +69,24 @@ def test_send_telegram_honors_retry_after_on_429():
     assert sleep.call_args_list[0].args[0] == 30.0
 
 
+def test_send_telegram_clamps_negative_retry_after():
+    # 음수 Retry-After(프록시 버그/시계 오차)가 와도 time.sleep(음수)로
+    # 죽으면 안 된다 → 대기값은 0 이상으로 클램프돼야 한다.
+    with patch("watcher.notifier.requests.post", return_value=_err_response(429, {"Retry-After": "-5"})), \
+         patch("watcher.notifier.time.sleep") as sleep:
+        ok = send_telegram("T", "C", "x", retries=2, backoff=2.0)
+    assert ok is False
+    assert sleep.call_args_list[0].args[0] >= 0.0
+
+
+def test_send_telegram_caps_huge_retry_after():
+    # 거대한 Retry-After 가 와도 몇 시간씩 블록되면 안 된다 → 상한으로 캡.
+    with patch("watcher.notifier.requests.post", return_value=_err_response(429, {"Retry-After": "86400"})), \
+         patch("watcher.notifier.time.sleep") as sleep:
+        send_telegram("T", "C", "x", retries=2, backoff=2.0)
+    assert sleep.call_args_list[0].args[0] <= 60.0
+
+
 def test_send_telegram_no_retry_on_permanent_4xx():
     with patch("watcher.notifier.requests.post", return_value=_err_response(400)) as post, \
          patch("watcher.notifier.time.sleep") as sleep:

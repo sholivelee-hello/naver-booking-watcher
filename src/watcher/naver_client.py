@@ -58,6 +58,12 @@ def fetch_available_start_date(business_id: str, biz_item_id: str,
     except (requests.RequestException, ValueError) as e:
         raise NaverClientError(f"요청 실패: {e}") from e
 
+    # 정상 GraphQL 응답은 항상 객체다. CDN/오류 페이지가 top-level JSON null 이나
+    # 배열을 주면 아래 data.get 이 AttributeError 로 새어나가므로(호출자는
+    # NaverClientError 만 잡는다) 여기서 정규화한다.
+    if not isinstance(data, dict):
+        raise NaverClientError(f"예상치 못한 응답(딕셔너리 아님): {type(data).__name__}")
+
     if data.get("errors"):
         raise NaverClientError(f"GraphQL 오류: {data['errors']}")
 

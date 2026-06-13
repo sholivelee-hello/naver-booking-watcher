@@ -43,3 +43,18 @@ def test_fetch_raises_on_unexpected_shape():
     with patch("watcher.naver_client.requests.post", return_value=_mock_response(payload)):
         with pytest.raises(NaverClientError):
             fetch_available_start_date("597072", "5011045")
+
+
+def test_fetch_raises_on_null_json():
+    # CDN/오류 페이지가 top-level JSON null 을 주면 data.get 이 AttributeError 로
+    # 새어나가면 안 된다 → NaverClientError 로 정규화돼야 한다.
+    with patch("watcher.naver_client.requests.post", return_value=_mock_response(None)):
+        with pytest.raises(NaverClientError):
+            fetch_available_start_date("597072", "5011045")
+
+
+def test_fetch_raises_on_non_dict_json():
+    # 배열 등 dict 가 아닌 JSON 도 마찬가지로 NaverClientError 여야 한다.
+    with patch("watcher.naver_client.requests.post", return_value=_mock_response([1, 2])):
+        with pytest.raises(NaverClientError):
+            fetch_available_start_date("597072", "5011045")

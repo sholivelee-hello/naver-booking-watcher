@@ -59,18 +59,23 @@ def run_loop(cfg, max_seconds=None) -> None:
         try:
             run_once(cfg)
             consecutive_failures = 0
-            if alerted:
-                send_telegram(cfg.bot_token, cfg.chat_id, "✅ 감시 정상 복구됨")
+            # 복구 통지도 전송에 성공했을 때만 alerted 를 내린다 — 실패 시 플래그를
+            # 유지해 다음 정상 주기에 다시 시도한다(유실 방지).
+            if alerted and send_telegram(cfg.bot_token, cfg.chat_id, "✅ 감시 정상 복구됨"):
                 alerted = False
         except Exception as e:  # 루프는 절대 죽지 않음 (조회·전송 실패 모두 포함)
             consecutive_failures += 1
             log.warning("감시 주기 실패 (%d회 연속): %s", consecutive_failures, e)
             if consecutive_failures >= FAIL_ALERT_THRESHOLD and not alerted:
-                send_telegram(
+                # 하필 텔레그램이 죽은 게 장애 원인이면 이 경고 전송도 실패한다.
+                # 전송에 성공했을 때만 alerted 를 세워, 실패 시 다음 주기마다
+                # 다시 시도한다 — 한 번 실패했다고 영영 포기하면 알리려던 '조용한
+                # 장애'가 그대로 묻힌다.
+                if send_telegram(
                     cfg.bot_token, cfg.chat_id,
                     f"⚠️ 감시 중단 위험: {consecutive_failures}회 연속 실패",
-                )
-                alerted = True
+                ):
+                    alerted = True
         if deadline is not None and time.monotonic() >= deadline:
             return
         time.sleep(cfg.poll_interval)

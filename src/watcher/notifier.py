@@ -6,6 +6,10 @@ import requests
 
 log = logging.getLogger("watcher.notifier")
 
+# 재시도 대기의 상한(초). Retry-After 가 거대한 값이거나 지수 백오프가 커져도
+# 감시기를 몇 시간씩 묶어두지 않도록 캡한다(폴링 간격이 보통 60초이므로 충분).
+_MAX_RETRY_DELAY = 60.0
+
 
 def build_message(available_date: str, booking_url: str) -> str:
     """예약 가능 날짜를 사람이 읽을 메시지로 변환.
@@ -29,16 +33,24 @@ def _retry_delay(exc, attempt: int, backoff: float) -> float:
     텔레그램 429(레이트리밋)면 응답의 Retry-After 헤더를 우선 존중한다 —
     고정 2초로 곧장 재시도하면 레이트리밋 창(보통 수십 초) 안에서 모두 실패해
     정작 자리 났을 때 알림을 잃는다. 그 외에는 지수 백오프(backoff*2^attempt).
+
+    어느 경로든 [0, _MAX_RETRY_DELAY] 로 클램프한다 — 음수(프록시 버그/시계
+    오차)면 time.sleep 이 ValueError 로 죽고, 거대한 값이면 감시기가 장시간
+    묶이기 때문이다.
     """
     resp = getattr(exc, "response", None)
     if resp is not None and getattr(resp, "status_code", None) == 429:
         ra = resp.headers.get("Retry-After")
         if ra:
             try:
-                return float(ra)
+                return _clamp(float(ra))
             except (TypeError, ValueError):
                 pass
-    return backoff * (2 ** attempt)
+    return _clamp(backoff * (2 ** attempt))
+
+
+def _clamp(delay: float) -> float:
+    return max(0.0, min(_MAX_RETRY_DELAY, delay))
 
 
 def send_telegram(token: str, chat_id: str, text: str,
