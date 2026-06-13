@@ -1,6 +1,7 @@
 # 비밀/상태 파일 — 절대 커밋 금지
 .env
-state.json
+# 로컬 실행용 상태 파일만 무시 (루트). GitHub Actions 용 state/state.json 은 추적함.
+/state.json
 *.tmp
 
 # Python

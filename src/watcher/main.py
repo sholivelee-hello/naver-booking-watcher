@@ -1,6 +1,7 @@
 """감시 오케스트레이션."""
 import logging
 import os
+import sys
 import time
 
 from watcher.availability import detect_new_availability
@@ -55,12 +56,21 @@ def run_loop(cfg) -> None:
 
 
 def main() -> None:
+    """엔트리포인트.
+
+    기본은 무한 루프(상시 실행: Mac/Oracle). `--once` 를 주면 1회만 실행하고
+    종료한다(GitHub Actions 등 외부 스케줄러가 주기를 담당하는 경우).
+    """
     from watcher.config import load_config
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
     cfg = load_config(os.environ)
+    if "--once" in sys.argv[1:]:
+        log.info("감시 1회 실행: %s", cfg.booking_url)
+        run_once(cfg)
+        return
     log.info("감시 시작: %s, %d초 주기", cfg.booking_url, cfg.poll_interval)
     run_loop(cfg)
 
