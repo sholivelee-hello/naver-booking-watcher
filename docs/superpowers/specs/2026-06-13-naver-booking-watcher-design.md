@@ -20,7 +20,17 @@
 - **감시 범위**: 오늘부터 향후 2달(약 60일)의 모든 영업일 (특정 날짜/시간대 제한 없음)
 - **알림 정책**: "꽉참 → 빈자리" 로 **전환되는 순간에만** 알림 (스팸 방지)
 
-## 데이터 소스 (검증 완료)
+> ⚠️ 갱신(2026-06-13): 아래 `schedule.daily` 기반 접근은 **실제 가용성을
+> 반영하지 못함**이 확인되어 폐기됨. `daily.stock`/`bookingCount` 는 설정상
+> 정원 템플릿이라, 예약이 꽉 차 있어도 자리가 남는 것처럼 나온다. 실제 구현은
+> **`bizItem.availableStartDate`** 를 사용한다 — 마감이면 `null`, 자리가 나면
+> "예약 가능한 가장 빠른 날짜" 문자열. 이 값이 `null`→날짜로 바뀌거나 더 빠른
+> 날짜로 바뀌는 순간 알린다. 쿼리: `query bizItem($input: BizItemParams) {
+> bizItem(input: $input) { availableStartDate } }`, `input.projections` 는
+> `"RESOURCE,MIN_MAX_PRICE,AVAILABLE_START_DATE"` (콤마 구분 문자열),
+> ids 는 문자열. 라이브로 검증함(현재 null = 페이지가 실제로 만석).
+
+## 데이터 소스 (초기 설계 — 폐기됨, 위 갱신 참고)
 
 네이버 예약 GraphQL 엔드포인트로 날짜별 재고/예약 현황을 조회할 수 있음을
 실제 호출로 확인했다.
