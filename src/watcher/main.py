@@ -18,8 +18,13 @@ def run_once(cfg, start_date: str, end_date: str) -> dict:
     """한 주기 실행: 조회→판정→신규오픈 비교→알림→상태저장. 신규오픈 맵 반환."""
     raw = fetch_daily(cfg.business_id, cfg.biz_item_id, start_date, end_date)
     cur = compute_open_slots(raw)
+    # 최초 실행(상태 파일 없음)에는 현재 열린 날짜를 알림 없이 시드만 한다.
+    # load_state는 파일이 없을 때와 빈 dict일 때 모두 {}를 반환하므로
+    # 이 분기가 없으면 첫 실행에서 모든 열린 날짜를 "신규 오픈"으로 오인해
+    # 대량 알림을 보낸다. 다음 실행부터 정상적으로 전환을 감지한다.
+    first_run = not os.path.exists(cfg.state_file)
     prev = load_state(cfg.state_file)
-    new = newly_opened(prev, cur)
+    new = {} if first_run else newly_opened(prev, cur)
     if new:
         log.info("신규 빈자리 %d건: %s", len(new), new)
         msg = build_message(new, cfg.booking_url)
