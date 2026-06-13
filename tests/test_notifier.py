@@ -10,15 +10,14 @@ def _ok_response():
     return resp
 
 
-def test_build_message_lists_dates_and_seats():
+def test_build_message_includes_date_and_link():
     msg = build_message(
-        {"2026-06-20": 3, "2026-06-25": 1},
+        "2026-06-20",
         "https://booking.naver.com/booking/13/bizes/597072/items/5011045",
     )
     assert "2026-06-20" in msg
-    assert "3" in msg
-    assert "2026-06-25" in msg
     assert "booking.naver.com" in msg
+    assert "예약" in msg
 
 
 def test_send_telegram_posts_to_api():

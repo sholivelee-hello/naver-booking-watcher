@@ -3,41 +3,45 @@ import requests
 
 GRAPHQL_URL = "https://booking.naver.com/graphql"
 
+# bizItem.availableStartDate 가 실제 "예약 가능한 가장 빠른 날짜"다.
+# 자리가 전부 차 있으면 null, 자리가 나면 날짜 문자열("YYYY-MM-DD")이 된다.
+# (schedule.daily 의 stock 은 설정상 정원 템플릿이라 실제 가용성과 무관하다.)
 _QUERY = """
-query schedule($scheduleParams: ScheduleParams) {
-  schedule(input: $scheduleParams) {
-    bizItemSchedule {
-      daily {
-        date
-      }
-    }
+query bizItem($input: BizItemParams) {
+  bizItem(input: $input) {
+    bizItemId
+    name
+    availableStartDate
+    isClosedBooking
   }
 }
 """
+
+_PROJECTIONS = "RESOURCE,MIN_MAX_PRICE,AVAILABLE_START_DATE"
 
 
 class NaverClientError(Exception):
     """네이버 조회/파싱 실패."""
 
 
-def fetch_daily(business_id: str, biz_item_id: str,
-                start_date: str, end_date: str, timeout: int = 15) -> dict:
-    """날짜별 raw 일정 맵 반환. {날짜: {stock, bookingCount, ...}}.
+def fetch_available_start_date(business_id: str, biz_item_id: str,
+                               timeout: int = 15):
+    """예약 가능한 가장 빠른 날짜를 반환. 자리가 없으면 None.
 
-    start_date / end_date 는 "YYYY-MM-DD".
+    반환: "YYYY-MM-DD" 문자열 또는 None.
     """
     referer = (
         f"https://booking.naver.com/booking/13/bizes/{business_id}"
         f"/items/{biz_item_id}"
     )
     payload = {
-        "operationName": "schedule",
+        "operationName": "bizItem",
         "variables": {
-            "scheduleParams": {
+            "input": {
                 "businessId": str(business_id),
                 "bizItemId": str(biz_item_id),
-                "startDateTime": f"{start_date}T00:00:00",
-                "endDateTime": f"{end_date}T23:59:59",
+                "lang": "ko",
+                "projections": _PROJECTIONS,
             }
         },
         "query": _QUERY,
@@ -58,6 +62,6 @@ def fetch_daily(business_id: str, biz_item_id: str,
         raise NaverClientError(f"GraphQL 오류: {data['errors']}")
 
     try:
-        return data["data"]["schedule"]["bizItemSchedule"]["daily"]["date"]
+        return data["data"]["bizItem"]["availableStartDate"]
     except (TypeError, KeyError) as e:
         raise NaverClientError(f"예상치 못한 응답 구조: {e}") from e

@@ -12,72 +12,67 @@ def _cfg(tmp_path):
     return Config(
         bot_token="tok", chat_id="chat",
         business_id="597072", biz_item_id="5011045",
-        poll_interval=60, watch_days=60,
+        poll_interval=60,
         state_file=str(tmp_path / "state.json"),
     )
 
 
-def test_run_once_notifies_on_new_open(tmp_path):
+def test_run_once_notifies_when_slot_opens(tmp_path):
     cfg = _cfg(tmp_path)
-    # 상태 파일을 미리 만들어 두면(빈 상태) 최초 실행 시드 분기를 건너뛰고
-    # 열린 날짜가 진짜 신규 전환으로 판정되어 알림이 발송된다.
-    save_state(cfg.state_file, {})
-    raw = {"2026-06-20": {"isSaleDay": True, "isBusinessDay": True,
-                          "stock": 48, "bookingCount": 45, "occupiedBookingCount": 0}}
-    with patch("watcher.main.fetch_daily", return_value=raw), \
+    # 마감 상태(None)를 미리 시드해 두면, 날짜가 생기는 순간이 진짜 전환으로
+    # 판정되어 알림이 발송된다.
+    save_state(cfg.state_file, {"availableStartDate": None})
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
          patch("watcher.main.send_telegram", return_value=True) as send:
-        new = run_once(cfg, "2026-06-13", "2026-08-12")
-    assert new == {"2026-06-20": 3}
+        new = run_once(cfg)
+    assert new == "2026-06-20"
     assert send.called
+    assert "2026-06-20" in send.call_args.args[2]
 
 
 def test_run_once_first_run_seeds_silently(tmp_path):
     cfg = _cfg(tmp_path)
     assert not os.path.exists(cfg.state_file)
-    raw = {"2026-06-20": {"isSaleDay": True, "isBusinessDay": True,
-                          "stock": 48, "bookingCount": 45, "occupiedBookingCount": 0}}
-    with patch("watcher.main.fetch_daily", return_value=raw), \
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
          patch("watcher.main.send_telegram", return_value=True) as send:
-        new = run_once(cfg, "2026-06-13", "2026-08-12")
-    assert new == {}
+        new = run_once(cfg)
+    assert new is None
     assert not send.called
     # 상태가 시드되어 다음 실행부터 전환을 감지할 수 있어야 한다.
     assert os.path.exists(cfg.state_file)
 
 
-def test_run_once_no_notify_when_already_open(tmp_path):
+def test_run_once_no_notify_when_still_full(tmp_path):
     cfg = _cfg(tmp_path)
-    raw = {"2026-06-20": {"isSaleDay": True, "isBusinessDay": True,
-                          "stock": 48, "bookingCount": 45, "occupiedBookingCount": 0}}
-    with patch("watcher.main.fetch_daily", return_value=raw), \
+    # 첫 실행: 마감(None) 시드, 알림 없음. 둘째 실행: 여전히 마감 → 알림 없음.
+    with patch("watcher.main.fetch_available_start_date", return_value=None), \
          patch("watcher.main.send_telegram", return_value=True):
-        run_once(cfg, "2026-06-13", "2026-08-12")
-    with patch("watcher.main.fetch_daily", return_value=raw), \
+        run_once(cfg)
+    with patch("watcher.main.fetch_available_start_date", return_value=None), \
          patch("watcher.main.send_telegram", return_value=True) as send2:
-        new = run_once(cfg, "2026-06-13", "2026-08-12")
-    assert new == {}
+        new = run_once(cfg)
+    assert new is None
     assert not send2.called
 
 
-def test_run_once_skips_send_when_no_open(tmp_path):
+def test_run_once_no_notify_when_date_unchanged(tmp_path):
     cfg = _cfg(tmp_path)
-    raw = {"2026-06-20": {"isSaleDay": True, "isBusinessDay": True,
-                          "stock": 48, "bookingCount": 48, "occupiedBookingCount": 0}}
-    with patch("watcher.main.fetch_daily", return_value=raw), \
+    save_state(cfg.state_file, {"availableStartDate": "2026-06-20"})
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
          patch("watcher.main.send_telegram", return_value=True) as send:
-        new = run_once(cfg, "2026-06-13", "2026-08-12")
-    assert new == {}
+        new = run_once(cfg)
+    assert new is None
     assert not send.called
 
 
-from datetime import date
-from watcher.main import date_range
-
-
-def test_date_range_spans_watch_days():
-    start, end = date_range(date(2026, 6, 13), watch_days=60)
-    assert start == "2026-06-13"
-    assert end == "2026-08-12"
+def test_run_once_notifies_when_earlier_date_appears(tmp_path):
+    cfg = _cfg(tmp_path)
+    save_state(cfg.state_file, {"availableStartDate": "2026-06-20"})
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-15"), \
+         patch("watcher.main.send_telegram", return_value=True) as send:
+        new = run_once(cfg)
+    assert new == "2026-06-15"
+    assert send.called
 
 
 class _StopLoop(Exception):

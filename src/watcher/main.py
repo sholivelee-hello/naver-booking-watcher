@@ -2,42 +2,33 @@
 import logging
 import os
 import time
-from datetime import date, timedelta
 
-from watcher.availability import compute_open_slots, newly_opened
-from watcher.naver_client import fetch_daily
+from watcher.availability import detect_new_availability
+from watcher.naver_client import fetch_available_start_date
 from watcher.notifier import build_message, send_telegram
 from watcher.state_store import load_state, save_state
 
 log = logging.getLogger("watcher")
 
 FAIL_ALERT_THRESHOLD = 10
+_STATE_KEY = "availableStartDate"
 
 
-def run_once(cfg, start_date: str, end_date: str) -> dict:
-    """한 주기 실행: 조회→판정→신규오픈 비교→알림→상태저장. 신규오픈 맵 반환."""
-    raw = fetch_daily(cfg.business_id, cfg.biz_item_id, start_date, end_date)
-    cur = compute_open_slots(raw)
-    # 최초 실행(상태 파일 없음)에는 현재 열린 날짜를 알림 없이 시드만 한다.
-    # load_state는 파일이 없을 때와 빈 dict일 때 모두 {}를 반환하므로
-    # 이 분기가 없으면 첫 실행에서 모든 열린 날짜를 "신규 오픈"으로 오인해
-    # 대량 알림을 보낸다. 다음 실행부터 정상적으로 전환을 감지한다.
+def run_once(cfg):
+    """한 주기 실행: 조회→전환 판정→알림→상태저장. 새로 난 날짜(또는 None) 반환."""
+    cur = fetch_available_start_date(cfg.business_id, cfg.biz_item_id)
+    # 최초 실행(상태 파일 없음)에는 현재 값을 알림 없이 시드만 한다.
+    # 이 분기가 없으면 첫 실행에서 이미 예약 가능한 상태일 때 곧바로 알림을
+    # 보낸다. 다음 실행부터 마감→오픈 전환을 정상 감지한다.
     first_run = not os.path.exists(cfg.state_file)
-    prev = load_state(cfg.state_file)
-    new = {} if first_run else newly_opened(prev, cur)
+    prev = load_state(cfg.state_file).get(_STATE_KEY)
+    new = None if first_run else detect_new_availability(prev, cur)
     if new:
-        log.info("신규 빈자리 %d건: %s", len(new), new)
+        log.info("예약 자리 발생: %s", new)
         msg = build_message(new, cfg.booking_url)
         send_telegram(cfg.bot_token, cfg.chat_id, msg)
-    save_state(cfg.state_file, cur)
+    save_state(cfg.state_file, {_STATE_KEY: cur})
     return new
-
-
-def date_range(today: date, watch_days: int):
-    """오늘부터 watch_days일 후까지의 (start, end) "YYYY-MM-DD" 문자열."""
-    start = today
-    end = today + timedelta(days=watch_days)
-    return start.isoformat(), end.isoformat()
 
 
 def run_loop(cfg) -> None:
@@ -46,8 +37,7 @@ def run_loop(cfg) -> None:
     alerted = False
     while True:
         try:
-            start, end = date_range(date.today(), cfg.watch_days)
-            run_once(cfg, start, end)
+            run_once(cfg)
             consecutive_failures = 0
             if alerted:
                 send_telegram(cfg.bot_token, cfg.chat_id, "✅ 감시 정상 복구됨")
@@ -71,8 +61,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
     cfg = load_config(os.environ)
-    log.info("감시 시작: %s, %d일 범위, %d초 주기",
-             cfg.booking_url, cfg.watch_days, cfg.poll_interval)
+    log.info("감시 시작: %s, %d초 주기", cfg.booking_url, cfg.poll_interval)
     run_loop(cfg)
 
 

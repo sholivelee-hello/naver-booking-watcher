@@ -1,7 +1,11 @@
 # 네이버 예약 빈자리 감시 → 텔레그램 알림
 
-네이버 예약 페이지를 60초마다 확인해, 꽉 찼던 날짜에 빈자리가 생기면
-텔레그램으로 즉시 알려줍니다.
+네이버 예약 페이지를 60초마다 확인해, 예약이 꽉 차 있던 항목에 자리가
+생기면(= 예약 가능한 날짜가 나타나면) 텔레그램으로 즉시 알려줍니다.
+
+> 감지 신호: 네이버 `bizItem.availableStartDate`. 자리가 전부 차 있으면
+> `null`, 자리가 나면 "예약 가능한 가장 빠른 날짜"가 채워진다. 이 값이
+> 마감(`null`)에서 날짜로 바뀌는 순간(또는 더 빠른 날짜로 바뀔 때) 알린다.
 
 ## 1. 텔레그램 봇 만들기 (약 2분)
 
@@ -19,7 +23,7 @@ cp .env.example .env   # .env 열어 토큰/chat_id 입력
 PYTHONPATH=src python -m watcher.main
 ```
 
-빈자리가 새로 생기면 텔레그램으로 알림이 옵니다. 종료는 Ctrl+C.
+예약 가능한 자리가 새로 생기면 텔레그램으로 알림이 옵니다. 종료는 Ctrl+C.
 
 ## 3. Oracle Cloud 무료 서버 배포
 
@@ -57,5 +61,4 @@ journalctl -u naver-watcher -f           # 로그 실시간 보기
 | NAVER_BUSINESS_ID | 사업장 id | (필수) |
 | NAVER_BIZ_ITEM_ID | 예약 항목 id | (필수) |
 | POLL_INTERVAL_SECONDS | 확인 주기(초) | 60 |
-| WATCH_DAYS | 감시 일수 | 60 |
 | STATE_FILE | 상태 저장 파일 | state.json |

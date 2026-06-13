@@ -13,7 +13,6 @@ class Config:
     business_id: str
     biz_item_id: str
     poll_interval: int
-    watch_days: int
     state_file: str
 
     @property
@@ -43,6 +42,5 @@ def load_config(env: dict) -> Config:
         business_id=env["NAVER_BUSINESS_ID"],
         biz_item_id=env["NAVER_BIZ_ITEM_ID"],
         poll_interval=int(env.get("POLL_INTERVAL_SECONDS", "60")),
-        watch_days=int(env.get("WATCH_DAYS", "60")),
         state_file=env.get("STATE_FILE", "state.json"),
     )

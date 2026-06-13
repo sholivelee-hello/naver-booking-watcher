@@ -1,29 +1,16 @@
-"""빈자리 판정 — 순수 함수, I/O 없음."""
+"""예약 가용성 전환 판정 — 순수 함수, I/O 없음."""
 
 
-def compute_open_slots(daily: dict) -> dict:
-    """네이버 daily 맵을 받아 {날짜: 남은자리수} 반환 (빈자리 있는 날만).
+def detect_new_availability(prev, cur):
+    """직전 availableStartDate(prev)와 이번 값(cur)을 비교해, 알릴 만한
+    '새 가용성'이면 cur 을, 아니면 None 을 반환.
 
-    빈자리 판정: 판매일 && 영업일 && (stock - booked - occupied) > 0
+    - cur 이 None(여전히 마감) → None
+    - cur 이 날짜이고 prev 와 다름(마감→오픈, 또는 더 빠른 날짜로 변경) → cur
+    - cur 이 날짜이고 prev 와 같음(변화 없음) → None
     """
-    open_slots = {}
-    for date, info in daily.items():
-        if not info.get("isSaleDay"):
-            continue
-        if not info.get("isBusinessDay"):
-            continue
-        stock = info.get("stock", 0) or 0
-        booked = info.get("bookingCount", 0) or 0
-        occupied = info.get("occupiedBookingCount", 0) or 0
-        remaining = stock - booked - occupied
-        if remaining > 0:
-            open_slots[date] = remaining
-    return open_slots
-
-
-def newly_opened(prev: dict, cur: dict) -> dict:
-    """직전 빈자리 맵(prev) 대비 이번에 새로 열린 날짜만 반환.
-
-    prev에 없던 날짜가 cur에 빈자리로 등장하면 신규 오픈.
-    """
-    return {date: seats for date, seats in cur.items() if date not in prev}
+    if not cur:
+        return None
+    if cur == prev:
+        return None
+    return cur
