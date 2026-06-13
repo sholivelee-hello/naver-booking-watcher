@@ -75,15 +75,17 @@ def test_run_once_notifies_when_earlier_date_appears(tmp_path):
     assert send.called
 
 
-def test_run_once_does_not_advance_state_when_send_fails(tmp_path):
+def test_run_once_raises_and_keeps_state_when_send_fails(tmp_path):
     cfg = _cfg(tmp_path)
     # 마감(None) 시드 후 자리가 났는데 텔레그램 전송이 실패하면, 상태를
-    # 갱신하지 않아 다음 주기에 같은 전환을 다시 감지(재시도)할 수 있어야 한다.
+    # 갱신하지 않아 다음 주기에 같은 전환을 다시 감지(재시도)할 수 있어야 하고,
+    # NotifyError 로 올라가 run_loop 의 헬스 카운터에 반영돼야 한다.
+    from watcher.main import NotifyError
     save_state(cfg.state_file, {"availableStartDate": None})
     with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
          patch("watcher.main.send_telegram", return_value=False):
-        new = run_once(cfg)
-    assert new == "2026-06-20"
+        with pytest.raises(NotifyError):
+            run_once(cfg)
     from watcher.state_store import load_state
     # 상태는 여전히 마감(None) 그대로여야 한다 (날짜로 갱신되면 영영 누락됨).
     assert load_state(cfg.state_file).get("availableStartDate") is None
@@ -131,6 +133,38 @@ def test_run_loop_exits_after_max_seconds(tmp_path):
          patch("watcher.main.time.monotonic", side_effect=times):
         run_loop(cfg, max_seconds=300)
     assert run_once_mock.call_count == 5
+
+
+def test_run_loop_counts_send_failures_toward_alert(tmp_path):
+    cfg = _cfg(tmp_path)
+    save_state(cfg.state_file, {"availableStartDate": None})
+    # 조회는 매번 성공(자리 남)하지만 전송이 계속 실패 → run_once 가 NotifyError 를
+    # 올려 헬스 카운터가 쌓이고, 임계치에서 '감시 중단 위험' 경고가 떠야 한다.
+    # (조회는 되는데 전송만 실패하는 조용한 장애를 운영자가 알 수 있어야 함)
+    sleeps = [None] * 9 + [_StopLoop()]
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
+         patch("watcher.main.send_telegram", return_value=False) as send, \
+         patch("watcher.main.time.sleep", side_effect=sleeps):
+        with pytest.raises(_StopLoop):
+            run_loop(cfg)
+    texts = [c.args[2] for c in send.call_args_list]
+    assert any("감시 중단 위험" in t for t in texts)
+
+
+def test_main_rejects_bad_minutes(monkeypatch):
+    for k, v in {
+        "TELEGRAM_BOT_TOKEN": "tok", "TELEGRAM_CHAT_ID": "chat",
+        "NAVER_BUSINESS_ID": "597072", "NAVER_BIZ_ITEM_ID": "5011045",
+    }.items():
+        monkeypatch.setenv(k, v)
+    from watcher.main import main
+    monkeypatch.setattr("sys.argv", ["prog", "--minutes", "abc"])
+    with pytest.raises(SystemExit):
+        main()
+    # 값 자체가 빠진 경우도 깔끔히 종료해야 한다 (IndexError 크래시 아님)
+    monkeypatch.setattr("sys.argv", ["prog", "--minutes"])
+    with pytest.raises(SystemExit):
+        main()
 
 
 def test_run_loop_sends_recovery_after_alert(tmp_path):

@@ -2,8 +2,12 @@ name: 네이버 예약 빈자리 감시
 
 on:
   schedule:
-    # 5분마다 새 회차 시작. 각 회차가 5분 동안 60초 간격으로 확인하므로
-    # 회차들이 이어져 사실상 1분 간격 24시간 감시가 된다.
+    # 한 회차가 ~50분 동안 60초 간격으로 폴링한다(긴 단일 잡).
+    # cron 은 5분마다 트리거하지만 아래 concurrency 직렬화 때문에 실제로는
+    # "대기 중 회차" 1개만 쌓인다. 그 대기 회차가 현재 회차 종료(또는 크래시)
+    # 즉시 이어받으므로, 공백은 회차 전환 시 러너 부팅 시간(~1분)뿐이다.
+    # → 사실상 ~98% 연속 감시. (이전의 '5분 회차'는 부팅 오버헤드 + 회차 사이
+    #   공백 때문에 실커버리지가 ~50%에 그쳤다.)
     # (공개 저장소는 GitHub Actions 사용량 무제한 무료)
     - cron: '*/5 * * * *'
   workflow_dispatch: {}   # 수동 실행 버튼
@@ -20,7 +24,7 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # 폭주 방지 안전장치
+    timeout-minutes: 56   # ~50분 폴링 + 부팅/커밋 여유. 폭주 방지 상한
     steps:
       - uses: actions/checkout@v6
 
@@ -31,7 +35,7 @@ jobs:
       - name: 의존성 설치
         run: pip install -r requirements.txt
 
-      - name: 감시 (5분간 60초 간격)
+      - name: 감시 (~50분간 60초 간격)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -40,18 +44,32 @@ jobs:
           POLL_INTERVAL_SECONDS: '60'
           STATE_FILE: state/state.json
           PYTHONPATH: src
-        run: python -m watcher.main --minutes 5
+        run: python -m watcher.main --minutes 50
 
       - name: 상태 변경 시 저장소에 보존
+        # 알림은 이미 폴링 중 즉시 발송됐다. 이 단계는 git 상태 보존일 뿐이므로
+        # 푸시가 끝내 실패해도 잡을 죽이지 않는다(경고만). 실패 시 다음 회차가
+        # 직전 푸시 상태를 다시 읽어 같은 전환을 재감지 → 최악의 경우 중복 알림
+        # (누락이 아니라). 직렬 실행(concurrency)이라 회차 간 동시 푸시는 없지만,
+        # 외부 커밋과의 경합에 대비해 rebase+재시도하고, 충돌 시 방금 폴링한
+        # 최신 상태(-X theirs)를 우선한다.
         run: |
-          if ! git diff --quiet -- state/state.json; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add state/state.json
-            git commit -m "chore: update watch state [skip ci]"
-            # 그 사이 main 이 앞서갔을 수 있으니 rebase 후 push (non-fast-forward 거부 방지)
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push
-          else
+          if git diff --quiet -- state/state.json; then
             echo "상태 변화 없음 — 커밋 생략"
+            exit 0
           fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/state.json
+          git commit -m "chore: update watch state [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}" \
+               && git push; then
+              echo "상태 보존 완료 (시도 ${attempt})"
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "푸시 경합 — 재시도 ${attempt}/5"
+            sleep 3
+          done
+          echo "::warning::상태 푸시 5회 실패 — 다음 회차에서 재동기화(중복 알림 가능)"

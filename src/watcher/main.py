@@ -15,6 +15,10 @@ FAIL_ALERT_THRESHOLD = 10
 _STATE_KEY = "availableStartDate"
 
 
+class NotifyError(Exception):
+    """알림 전송이 (재시도까지) 모두 실패. 상태 미갱신 + 헬스 카운터 증가용."""
+
+
 def run_once(cfg):
     """한 주기 실행: 조회→전환 판정→알림→상태저장. 새로 난 날짜(또는 None) 반환."""
     cur = fetch_available_start_date(cfg.business_id, cfg.biz_item_id)
@@ -34,8 +38,10 @@ def run_once(cfg):
             # 전송이 실패하면 상태를 갱신하지 않는다 → 다음 주기에 같은 전환을
             # 다시 감지해 재시도한다. 갱신해 버리면 이 날짜가 '이미 알림' 처리되어
             # 영영 누락된다(앱의 존재 이유를 정면으로 무너뜨림).
+            # 또한 예외로 올려 run_loop 의 헬스 카운터에 반영한다 → 조회는 되는데
+            # 전송만 계속 실패하는 '조용한 장애'를 운영자가 알 수 있게 한다.
             log.warning("알림 전송 실패 — 상태 미갱신, 다음 주기 재시도: %s", new)
-            return new
+            raise NotifyError(f"알림 전송 실패: {new}")
     save_state(cfg.state_file, {_STATE_KEY: cur})
     return new
 
@@ -56,13 +62,13 @@ def run_loop(cfg, max_seconds=None) -> None:
             if alerted:
                 send_telegram(cfg.bot_token, cfg.chat_id, "✅ 감시 정상 복구됨")
                 alerted = False
-        except Exception as e:  # 루프는 절대 죽지 않음
+        except Exception as e:  # 루프는 절대 죽지 않음 (조회·전송 실패 모두 포함)
             consecutive_failures += 1
-            log.warning("조회 실패 (%d회 연속): %s", consecutive_failures, e)
+            log.warning("감시 주기 실패 (%d회 연속): %s", consecutive_failures, e)
             if consecutive_failures >= FAIL_ALERT_THRESHOLD and not alerted:
                 send_telegram(
                     cfg.bot_token, cfg.chat_id,
-                    f"⚠️ 감시 중단 위험: {consecutive_failures}회 연속 조회 실패",
+                    f"⚠️ 감시 중단 위험: {consecutive_failures}회 연속 실패",
                 )
                 alerted = True
         if deadline is not None and time.monotonic() >= deadline:
@@ -91,7 +97,12 @@ def main() -> None:
         run_once(cfg)
         return
     if "--minutes" in args:
-        minutes = int(args[args.index("--minutes") + 1])
+        try:
+            minutes = int(args[args.index("--minutes") + 1])
+        except (IndexError, ValueError):
+            raise SystemExit("--minutes 에는 정수 분을 지정해야 합니다 (예: --minutes 50)")
+        if minutes <= 0:
+            raise SystemExit("--minutes 는 양수여야 합니다")
         log.info("감시 %d분간 실행: %s (%d초 주기)",
                  minutes, cfg.booking_url, cfg.poll_interval)
         run_loop(cfg, max_seconds=minutes * 60)
