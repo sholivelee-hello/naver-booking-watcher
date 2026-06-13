@@ -33,7 +33,10 @@ def test_send_telegram_posts_to_api():
 
 def test_send_telegram_retries_then_fails():
     import requests
-    with patch("watcher.notifier.requests.post", side_effect=requests.RequestException("boom")) as post:
+    with patch("watcher.notifier.requests.post", side_effect=requests.RequestException("boom")) as post, \
+         patch("watcher.notifier.time.sleep") as sleep:
         ok = send_telegram("TOKEN", "CHAT", "hello", retries=3)
     assert ok is False
     assert post.call_count == 3
+    # 시도 사이에만 대기 (마지막 시도 뒤에는 대기 안 함) → retries-1회
+    assert sleep.call_count == 2
