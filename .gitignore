@@ -1,0 +1,10 @@
+# 비밀/상태 파일 — 절대 커밋 금지
+.env
+state.json
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
