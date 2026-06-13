@@ -43,6 +43,13 @@ query schedule($scheduleParams: ScheduleParams) {
 }
 ```
 
+> 중요: 네이버 스키마에서 `daily.date` 는 **JSON 스칼라**다. 하위 필드를
+> 지정하면(`date { stock ... }`) HTTP 400(`Field "date" must not have a
+> selection since type "JSON" has no subfields`)이 난다. 따라서 `date` 는
+> leaf 로 선택하고, 응답으로 오는 JSON 스칼라 안에 날짜별 전체 객체
+> (`stock`, `bookingCount`, `occupiedBookingCount`, `isSaleDay`,
+> `isBusinessDay`, `isHoliday` 등)가 그대로 담겨 온다. (라이브 호출로 검증함)
+
 variables 예시:
 ```json
 {
@@ -72,9 +79,8 @@ variables 예시:
 `isSaleDay && isBusinessDay && (stock - bookingCount - occupiedBookingCount) > 0`
 → 남은 자리 수 = `stock - bookingCount - occupiedBookingCount`
 
-> 참고: 위 daily 쿼리는 검증 완료. 구현 시 응답에서 `stock`,
-> `bookingCount`, `occupiedBookingCount`, `isSaleDay`, `isBusinessDay`
-> 필드를 함께 요청하도록 쿼리 셀렉션을 확장한다 (이미 응답에 포함됨을 확인).
+> 참고: 위 daily 쿼리는 라이브 호출로 검증 완료. `date` 가 JSON 스칼라이므로
+> 별도 셀렉션 확장 없이도 위 표의 모든 필드가 응답에 포함되어 온다.
 
 ## 아키텍처
 
