@@ -25,6 +25,30 @@ PYTHONPATH=src python -m watcher.main
 
 예약 가능한 자리가 새로 생기면 텔레그램으로 알림이 옵니다. 종료는 Ctrl+C.
 
+## 2-1. Mac에서 24시간 백그라운드 실행 (launchd)
+
+로그아웃·재부팅에도 살아남고, 죽으면 자동 재시작된다.
+
+```bash
+# 1) .env 작성 후, 실행 래퍼에 권한 부여
+chmod +x deploy/run-local.sh
+
+# 2) LaunchAgent 등록 (plist 안의 경로를 본인 환경에 맞게 수정)
+cp deploy/com.hospital.naver-watcher.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.hospital.naver-watcher.plist
+
+# 3) 상태 / 로그 확인
+launchctl list | grep naver-watcher      # 가운데 값이 0이면 정상
+tail -f logs/watcher.log
+
+# 중지하려면
+launchctl unload ~/Library/LaunchAgents/com.hospital.naver-watcher.plist
+```
+
+> 주의: launchd 는 PATH 가 달라 `requests` 없는 시스템 python 을 잡을 수 있다.
+> `deploy/run-local.sh` 가 requests 설치된 인터프리터를 명시한다
+> (`PYTHON_BIN` 환경변수로 override 가능).
+
 ## 3. Oracle Cloud 무료 서버 배포
 
 1. Oracle Cloud 무료 계정 생성 → Always Free Ubuntu VM 생성
