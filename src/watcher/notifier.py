@@ -3,11 +3,18 @@ import requests
 
 
 def build_message(available_date: str, booking_url: str) -> str:
-    """예약 가능 날짜를 사람이 읽을 메시지로 변환."""
+    """예약 가능 날짜를 사람이 읽을 메시지로 변환.
+
+    링크는 해당 날짜로 바로 가도록 startDate 를 붙인다 → 누르면 그날 비어있는
+    시간이 바로 보인다.
+    """
+    sep = "&" if "?" in booking_url else "?"
+    dated_link = f"{booking_url}{sep}startDate={available_date}"
     return (
         "🏥 [병원예약] 예약 자리가 났어요!\n\n"
-        f"📅 가장 빠른 예약 가능일: {available_date}\n\n"
-        f"👉 지금 바로 예약: {booking_url}"
+        f"📅 예약 가능일: {available_date}\n"
+        "👇 누르면 그날 비어있는 시간이 바로 보여요\n"
+        f"{dated_link}"
     )
 
 

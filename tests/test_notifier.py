@@ -10,14 +10,15 @@ def _ok_response():
     return resp
 
 
-def test_build_message_includes_date_and_link():
+def test_build_message_includes_date_and_deeplink():
     msg = build_message(
         "2026-06-20",
         "https://booking.naver.com/booking/13/bizes/597072/items/5011045",
     )
     assert "2026-06-20" in msg
-    assert "booking.naver.com" in msg
     assert "예약" in msg
+    # 링크가 해당 날짜로 바로 가도록 startDate 가 붙어야 한다
+    assert "startDate=2026-06-20" in msg
 
 
 def test_send_telegram_posts_to_api():
