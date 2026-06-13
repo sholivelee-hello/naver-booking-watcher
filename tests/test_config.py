@@ -32,3 +32,13 @@ def test_load_config_missing_required_raises():
     del env["TELEGRAM_BOT_TOKEN"]
     with pytest.raises(ConfigError):
         load_config(env)
+
+
+def test_load_config_rejects_non_numeric_poll_interval():
+    with pytest.raises(ConfigError):
+        load_config(_env(POLL_INTERVAL_SECONDS="60s"))
+
+
+def test_load_config_rejects_nonpositive_poll_interval():
+    with pytest.raises(ConfigError):
+        load_config(_env(POLL_INTERVAL_SECONDS="0"))

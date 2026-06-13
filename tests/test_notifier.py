@@ -40,3 +40,40 @@ def test_send_telegram_retries_then_fails():
     assert post.call_count == 3
     # 시도 사이에만 대기 (마지막 시도 뒤에는 대기 안 함) → retries-1회
     assert sleep.call_count == 2
+
+
+def _err_response(status, headers=None):
+    import requests
+    resp = MagicMock()
+    resp.status_code = status
+    resp.headers = headers or {}
+    resp.raise_for_status.side_effect = requests.HTTPError(response=resp)
+    return resp
+
+
+def test_send_telegram_uses_exponential_backoff():
+    import requests
+    with patch("watcher.notifier.requests.post", side_effect=requests.RequestException("boom")), \
+         patch("watcher.notifier.time.sleep") as sleep:
+        send_telegram("T", "C", "x", retries=3, backoff=2.0)
+    # 고정이 아니라 지수: 2, 4
+    assert [c.args[0] for c in sleep.call_args_list] == [2.0, 4.0]
+
+
+def test_send_telegram_honors_retry_after_on_429():
+    with patch("watcher.notifier.requests.post", return_value=_err_response(429, {"Retry-After": "30"})), \
+         patch("watcher.notifier.time.sleep") as sleep:
+        ok = send_telegram("T", "C", "x", retries=2, backoff=2.0)
+    assert ok is False
+    # 429 면 백오프 대신 Retry-After 를 존중해야 한다
+    assert sleep.call_args_list[0].args[0] == 30.0
+
+
+def test_send_telegram_no_retry_on_permanent_4xx():
+    with patch("watcher.notifier.requests.post", return_value=_err_response(400)) as post, \
+         patch("watcher.notifier.time.sleep") as sleep:
+        ok = send_telegram("T", "C", "x", retries=3)
+    assert ok is False
+    # 400(예: chat not found)은 재시도해도 소용없으니 즉시 중단
+    assert post.call_count == 1
+    assert not sleep.called

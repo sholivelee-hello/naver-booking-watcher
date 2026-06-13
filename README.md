@@ -28,8 +28,10 @@ PYTHONPATH=src python -m watcher.main
 ## 2-0. GitHub Actions로 24시간 실행 (서버·카드 불필요, 무료, ~1분 간격)
 
 **공개(public) 저장소**에 올리면 GitHub Actions가 무제한 무료로 돌아간다.
-워크플로우 한 회차가 5분 동안 60초 간격으로 확인하고, 5분마다 다음 회차가
-이어받아 **사실상 1분 간격 24시간 감시**가 된다. 컴퓨터가 꺼져 있어도 동작.
+워크플로우 한 회차가 ~50분 동안 60초 간격으로 확인하고, `concurrency` 직렬화로
+대기 중인 다음 회차가 현재 회차 종료(또는 크래시) 즉시 이어받는다.
+공백은 회차 전환 시 러너 부팅 시간(~1분)뿐이라 **사실상 24시간 연속 감시**가
+된다. 컴퓨터가 꺼져 있어도 동작.
 
 1. 저장소를 본인 **개인** GitHub 계정에 push (private 권장).
 2. 저장소 **Settings → Secrets and variables → Actions → New repository secret**
@@ -40,10 +42,12 @@ PYTHONPATH=src python -m watcher.main
    **Actions** 탭에서 수동 실행(Run workflow)도 가능.
 
 동작 방식:
-- 각 회차는 `python -m watcher.main --minutes 5` 로 5분간 60초 주기로 확인.
-- `concurrency` 로 한 번에 하나만 돌게 직렬화(중복 알림 방지).
+- 각 회차는 `python -m watcher.main --minutes 50` 로 50분간 60초 주기로 확인.
+- cron(`*/5`)은 대기 회차 1개를 항상 채워 두는 용도 — `concurrency` 직렬화로
+  동시 실행은 막고(중복 알림 방지), 현재 회차가 끝나면 대기 회차가 바로 이어받는다.
 - 상태는 `state/state.json` 에 저장되며, 값이 바뀌면 워크플로우가 저장소에
-  자동 커밋해 다음 회차가 전환을 감지할 수 있게 한다.
+  자동 커밋(rebase+재시도, 충돌 시 최신 상태 우선)해 다음 회차가 전환을
+  감지할 수 있게 한다. 푸시가 실패해도 알림은 이미 발송됐으므로 누락되지 않는다.
 
 > 공개 저장소라야 무제한 무료다. 코드엔 비밀정보가 없고, 텔레그램 토큰은
 > 저장소가 아니라 Actions 시크릿에 저장된다.
