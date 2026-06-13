@@ -167,6 +167,23 @@ def test_main_rejects_bad_minutes(monkeypatch):
         main()
 
 
+def test_run_loop_retries_warning_until_delivered(tmp_path):
+    cfg = _cfg(tmp_path)
+    # 하필 텔레그램이 죽은 게 장애 원인이면 경고 전송도 실패한다. 이때 한 번
+    # 실패했다고 영영 포기하면 정작 알리려던 '조용한 장애'가 그대로 묻힌다 →
+    # 전송이 성공할 때까지 다음 주기마다 다시 시도해야 한다.
+    # 10회째 경고 전송이 실패(False)하고 11회째에 성공(True)하면, 그 뒤로는
+    # 더 보내지 않아야 한다(send 호출은 정확히 2회).
+    sleeps = [None] * 11 + [_StopLoop()]
+    with patch("watcher.main.run_once", side_effect=RuntimeError("boom")), \
+         patch("watcher.main.send_telegram", side_effect=[False, True]) as send, \
+         patch("watcher.main.time.sleep", side_effect=sleeps):
+        with pytest.raises(_StopLoop):
+            run_loop(cfg)
+    assert send.call_count == 2
+    assert all("감시 중단 위험" in c.args[2] for c in send.call_args_list)
+
+
 def test_run_loop_sends_recovery_after_alert(tmp_path):
     cfg = _cfg(tmp_path)
     # 10회 실패(10회째에 경고) 후 11회째 성공 → 복구 알림.
