@@ -2,7 +2,9 @@ name: 네이버 예약 빈자리 감시
 
 on:
   schedule:
-    # 5분마다 (GitHub Actions 최소 간격; 실제로는 더 지연될 수 있음)
+    # 5분마다 새 회차 시작. 각 회차가 5분 동안 60초 간격으로 확인하므로
+    # 회차들이 이어져 사실상 1분 간격 24시간 감시가 된다.
+    # (공개 저장소는 GitHub Actions 사용량 무제한 무료)
     - cron: '*/5 * * * *'
   workflow_dispatch: {}   # 수동 실행 버튼
 
@@ -10,6 +12,7 @@ on:
 permissions:
   contents: write
 
+# 한 번에 하나만 돌게 직렬화 (회차 겹침/중복 알림 방지)
 concurrency:
   group: naver-watch
   cancel-in-progress: false
@@ -17,6 +20,7 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10   # 폭주 방지 안전장치
     steps:
       - uses: actions/checkout@v6
 
@@ -27,15 +31,16 @@ jobs:
       - name: 의존성 설치
         run: pip install -r requirements.txt
 
-      - name: 감시 1회 실행
+      - name: 감시 (5분간 60초 간격)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NAVER_BUSINESS_ID: '597072'
           NAVER_BIZ_ITEM_ID: '5011045'
+          POLL_INTERVAL_SECONDS: '60'
           STATE_FILE: state/state.json
           PYTHONPATH: src
-        run: python -m watcher.main --once
+        run: python -m watcher.main --minutes 5
 
       - name: 상태 변경 시 저장소에 보존
         run: |

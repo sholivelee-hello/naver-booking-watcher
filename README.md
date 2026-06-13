@@ -25,10 +25,11 @@ PYTHONPATH=src python -m watcher.main
 
 예약 가능한 자리가 새로 생기면 텔레그램으로 알림이 옵니다. 종료는 Ctrl+C.
 
-## 2-0. GitHub Actions로 24시간 실행 (서버 불필요, 무료)
+## 2-0. GitHub Actions로 24시간 실행 (서버·카드 불필요, 무료, ~1분 간격)
 
-GitHub 저장소에 올리면, 별도 서버 없이 GitHub Actions가 5분마다 자동
-실행한다. 컴퓨터가 꺼져 있어도 동작한다.
+**공개(public) 저장소**에 올리면 GitHub Actions가 무제한 무료로 돌아간다.
+워크플로우 한 회차가 5분 동안 60초 간격으로 확인하고, 5분마다 다음 회차가
+이어받아 **사실상 1분 간격 24시간 감시**가 된다. 컴퓨터가 꺼져 있어도 동작.
 
 1. 저장소를 본인 **개인** GitHub 계정에 push (private 권장).
 2. 저장소 **Settings → Secrets and variables → Actions → New repository secret**
@@ -39,13 +40,13 @@ GitHub 저장소에 올리면, 별도 서버 없이 GitHub Actions가 5분마다
    **Actions** 탭에서 수동 실행(Run workflow)도 가능.
 
 동작 방식:
-- 매 실행마다 `python -m watcher.main --once` 로 1회 확인.
+- 각 회차는 `python -m watcher.main --minutes 5` 로 5분간 60초 주기로 확인.
+- `concurrency` 로 한 번에 하나만 돌게 직렬화(중복 알림 방지).
 - 상태는 `state/state.json` 에 저장되며, 값이 바뀌면 워크플로우가 저장소에
-  자동 커밋해 다음 실행이 전환을 감지할 수 있게 한다.
+  자동 커밋해 다음 회차가 전환을 감지할 수 있게 한다.
 
-> 한계: GitHub Actions 스케줄은 최소 5분 간격이고 부하 시 더 지연될 수 있어,
-> 아주 잠깐 났다 사라지는 자리는 놓칠 수 있다. 1분 단위가 필요하면 아래
-> launchd(Mac) 또는 Oracle 서버 방식을 쓴다.
+> 공개 저장소라야 무제한 무료다. 코드엔 비밀정보가 없고, 텔레그램 토큰은
+> 저장소가 아니라 Actions 시크릿에 저장된다.
 
 ## 2-1. Mac에서 24시간 백그라운드 실행 (launchd)
 

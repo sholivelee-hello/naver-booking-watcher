@@ -94,6 +94,19 @@ def test_run_loop_alerts_after_threshold_failures(tmp_path):
     assert "감시 중단 위험" in warning_text
 
 
+def test_run_loop_exits_after_max_seconds(tmp_path):
+    cfg = _cfg(tmp_path)
+    # monotonic: 시작=0 → deadline=300. 매 반복 끝 체크에서 60,120,180,240,300.
+    # 5번째 반복 후 300>=300 이라 종료. run_once 5회 호출되어야 한다.
+    times = [0, 60, 120, 180, 240, 300]
+    with patch("watcher.main.run_once") as run_once_mock, \
+         patch("watcher.main.send_telegram", return_value=True), \
+         patch("watcher.main.time.sleep"), \
+         patch("watcher.main.time.monotonic", side_effect=times):
+        run_loop(cfg, max_seconds=300)
+    assert run_once_mock.call_count == 5
+
+
 def test_run_loop_sends_recovery_after_alert(tmp_path):
     cfg = _cfg(tmp_path)
     # 10회 실패(10회째에 경고) 후 11회째 성공 → 복구 알림.

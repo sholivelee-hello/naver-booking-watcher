@@ -32,8 +32,13 @@ def run_once(cfg):
     return new
 
 
-def run_loop(cfg) -> None:
-    """무한 루프: poll_interval마다 run_once. 에러 격리 + 연속실패 경고."""
+def run_loop(cfg, max_seconds=None) -> None:
+    """poll_interval마다 run_once. 에러 격리 + 연속실패 경고.
+
+    max_seconds 가 주어지면 그 시간이 지나면 종료한다(GitHub Actions처럼
+    외부에서 주기적으로 재실행하는 경우). None 이면 무한 루프(상시 실행).
+    """
+    deadline = None if max_seconds is None else time.monotonic() + max_seconds
     consecutive_failures = 0
     alerted = False
     while True:
@@ -52,14 +57,19 @@ def run_loop(cfg) -> None:
                     f"⚠️ 감시 중단 위험: {consecutive_failures}회 연속 조회 실패",
                 )
                 alerted = True
+        if deadline is not None and time.monotonic() >= deadline:
+            return
         time.sleep(cfg.poll_interval)
 
 
 def main() -> None:
     """엔트리포인트.
 
-    기본은 무한 루프(상시 실행: Mac/Oracle). `--once` 를 주면 1회만 실행하고
-    종료한다(GitHub Actions 등 외부 스케줄러가 주기를 담당하는 경우).
+    모드:
+    - 기본: 무한 루프(상시 실행: Mac/Oracle)
+    - `--once`: 1회만 실행하고 종료
+    - `--minutes N`: N분 동안 poll_interval 주기로 돌고 종료
+      (GitHub Actions에서 한 회차 안에서 60초마다 반복할 때 사용)
     """
     from watcher.config import load_config
     logging.basicConfig(
@@ -67,9 +77,16 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(message)s",
     )
     cfg = load_config(os.environ)
-    if "--once" in sys.argv[1:]:
+    args = sys.argv[1:]
+    if "--once" in args:
         log.info("감시 1회 실행: %s", cfg.booking_url)
         run_once(cfg)
+        return
+    if "--minutes" in args:
+        minutes = int(args[args.index("--minutes") + 1])
+        log.info("감시 %d분간 실행: %s (%d초 주기)",
+                 minutes, cfg.booking_url, cfg.poll_interval)
+        run_loop(cfg, max_seconds=minutes * 60)
         return
     log.info("감시 시작: %s, %d초 주기", cfg.booking_url, cfg.poll_interval)
     run_loop(cfg)
