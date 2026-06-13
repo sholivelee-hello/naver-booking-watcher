@@ -97,9 +97,15 @@ def detect_new_availability(prev, cur):
     """직전 availableStartDate(prev)와 이번 값(cur)을 비교해, 알릴 만한
     '새 가용성'이면 cur 을, 아니면 None 을 반환.
 
-    - cur 이 None(여전히 마감) → None
-    - cur 이 날짜이고 prev 와 다름(마감→오픈, 또는 더 빠른 날짜로 변경) → cur
-    - cur 이 날짜이고 prev 와 같음(변화 없음) → None
+    핵심: cur 은 "예약 가능한 시간이 있는가"의 신호다.
+    None 이면 예약 가능한 시간이 하나도 없음(마감), 날짜면 그 시점부터
+    예약 가능한 시간(자리)이 실제로 존재한다. 대부분 만석이라 자리가 생기는
+    순간이 곧 기회이므로, '예약 가능한 시간이 있으면(None 이 아니면) 무조건'
+    알린다(날짜가 빠르든 늦든 무관). 직전과 동일한 상태만 스팸 방지로 건너뛴다.
+
+    - cur 이 None(예약 가능 시간 없음) → None
+    - cur 에 자리가 있고 prev 와 다름(마감→오픈, 또는 가용 날짜 변경) → cur
+    - cur 에 자리가 있고 prev 와 같음(변화 없음) → None
     """
     if not cur:
         return None
@@ -184,11 +190,18 @@ import requests
 
 
 def build_message(available_date: str, booking_url: str) -> str:
-    """예약 가능 날짜를 사람이 읽을 메시지로 변환."""
+    """예약 가능 날짜를 사람이 읽을 메시지로 변환.
+
+    링크는 해당 날짜로 바로 가도록 startDate 를 붙인다 → 누르면 그날 비어있는
+    시간이 바로 보인다.
+    """
+    sep = "&" if "?" in booking_url else "?"
+    dated_link = f"{booking_url}{sep}startDate={available_date}"
     return (
         "🏥 [병원예약] 예약 자리가 났어요!\n\n"
-        f"📅 가장 빠른 예약 가능일: {available_date}\n\n"
-        f"👉 지금 바로 예약: {booking_url}"
+        f"📅 예약 가능일: {available_date}\n"
+        "👇 누르면 그날 비어있는 시간이 바로 보여요\n"
+        f"{dated_link}"
     )
 
 
@@ -226,6 +239,9 @@ def load_state(path: str) -> dict:
 
 def save_state(path: str, state: dict) -> None:
     """상태를 JSON으로 저장 (원자적 쓰기)."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False)
@@ -252,16 +268,20 @@ _STATE_KEY = "availableStartDate"
 def run_once(cfg):
     """한 주기 실행: 조회→전환 판정→알림→상태저장. 새로 난 날짜(또는 None) 반환."""
     cur = fetch_available_start_date(cfg.business_id, cfg.biz_item_id)
-    # 최초 실행(상태 파일 없음)에는 현재 값을 알림 없이 시드만 한다.
-    # 이 분기가 없으면 첫 실행에서 이미 예약 가능한 상태일 때 곧바로 알림을
-    # 보낸다. 다음 실행부터 마감→오픈 전환을 정상 감지한다.
-    first_run = not os.path.exists(cfg.state_file)
-    prev = load_state(cfg.state_file).get(_STATE_KEY)
+    state = load_state(cfg.state_file)
+    # 최초 실행(상태 없음 또는 손상)에는 현재 값을 알림 없이 시드만 한다.
+    # 파일 존재 여부가 아니라 상태 키 존재로 판정한다 — 파일이 깨져
+    # load_state 가 {} 를 돌려줄 때도 오탐 없이 다시 시드된다.
+    first_run = _STATE_KEY not in state
+    prev = state.get(_STATE_KEY)
     new = None if first_run else detect_new_availability(prev, cur)
     if new:
         log.info("예약 자리 발생: %s", new)
         msg = build_message(new, cfg.booking_url)
-        send_telegram(cfg.bot_token, cfg.chat_id, msg)
+        if not send_telegram(cfg.bot_token, cfg.chat_id, msg):
+            # 전송 실패 시 상태 미갱신 → 다음 주기에 같은 전환을 재시도.
+            log.warning("알림 전송 실패 — 상태 미갱신, 다음 주기 재시도: %s", new)
+            return new
     save_state(cfg.state_file, {_STATE_KEY: cur})
     return new
 

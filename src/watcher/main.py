@@ -18,16 +18,24 @@ _STATE_KEY = "availableStartDate"
 def run_once(cfg):
     """한 주기 실행: 조회→전환 판정→알림→상태저장. 새로 난 날짜(또는 None) 반환."""
     cur = fetch_available_start_date(cfg.business_id, cfg.biz_item_id)
-    # 최초 실행(상태 파일 없음)에는 현재 값을 알림 없이 시드만 한다.
+    state = load_state(cfg.state_file)
+    # 최초 실행(상태 없음 또는 손상)에는 현재 값을 알림 없이 시드만 한다.
     # 이 분기가 없으면 첫 실행에서 이미 예약 가능한 상태일 때 곧바로 알림을
     # 보낸다. 다음 실행부터 마감→오픈 전환을 정상 감지한다.
-    first_run = not os.path.exists(cfg.state_file)
-    prev = load_state(cfg.state_file).get(_STATE_KEY)
+    # 파일 존재 여부(os.path.exists)가 아니라 상태 키 존재로 판정한다 —
+    # 파일이 깨져 load_state 가 {} 를 돌려줄 때도 오탐 없이 다시 시드된다.
+    first_run = _STATE_KEY not in state
+    prev = state.get(_STATE_KEY)
     new = None if first_run else detect_new_availability(prev, cur)
     if new:
         log.info("예약 자리 발생: %s", new)
         msg = build_message(new, cfg.booking_url)
-        send_telegram(cfg.bot_token, cfg.chat_id, msg)
+        if not send_telegram(cfg.bot_token, cfg.chat_id, msg):
+            # 전송이 실패하면 상태를 갱신하지 않는다 → 다음 주기에 같은 전환을
+            # 다시 감지해 재시도한다. 갱신해 버리면 이 날짜가 '이미 알림' 처리되어
+            # 영영 누락된다(앱의 존재 이유를 정면으로 무너뜨림).
+            log.warning("알림 전송 실패 — 상태 미갱신, 다음 주기 재시도: %s", new)
+            return new
     save_state(cfg.state_file, {_STATE_KEY: cur})
     return new
 

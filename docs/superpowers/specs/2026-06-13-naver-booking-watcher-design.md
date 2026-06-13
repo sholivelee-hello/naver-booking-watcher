@@ -24,8 +24,10 @@
 > 반영하지 못함**이 확인되어 폐기됨. `daily.stock`/`bookingCount` 는 설정상
 > 정원 템플릿이라, 예약이 꽉 차 있어도 자리가 남는 것처럼 나온다. 실제 구현은
 > **`bizItem.availableStartDate`** 를 사용한다 — 마감이면 `null`, 자리가 나면
-> "예약 가능한 가장 빠른 날짜" 문자열. 이 값이 `null`→날짜로 바뀌거나 더 빠른
-> 날짜로 바뀌는 순간 알린다. 쿼리: `query bizItem($input: BizItemParams) {
+> "예약 가능한 가장 빠른 날짜" 문자열. 대부분 만석(`null`)이라, 이 값이
+> 날짜로 나타나면(직전과 다른 날짜면 더 빠르든 늦든 무관) 무조건 알린다.
+> 같은 날짜가 연속으로 떠 있으면 스팸 방지로 재알림하지 않는다.
+> 쿼리: `query bizItem($input: BizItemParams) {
 > bizItem(input: $input) { availableStartDate } }`, `input.projections` 는
 > `"RESOURCE,MIN_MAX_PRICE,AVAILABLE_START_DATE"` (콤마 구분 문자열),
 > ids 는 문자열. 라이브로 검증함(현재 null = 페이지가 실제로 만석).

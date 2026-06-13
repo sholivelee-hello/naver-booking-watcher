@@ -75,6 +75,32 @@ def test_run_once_notifies_when_earlier_date_appears(tmp_path):
     assert send.called
 
 
+def test_run_once_does_not_advance_state_when_send_fails(tmp_path):
+    cfg = _cfg(tmp_path)
+    # 마감(None) 시드 후 자리가 났는데 텔레그램 전송이 실패하면, 상태를
+    # 갱신하지 않아 다음 주기에 같은 전환을 다시 감지(재시도)할 수 있어야 한다.
+    save_state(cfg.state_file, {"availableStartDate": None})
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
+         patch("watcher.main.send_telegram", return_value=False):
+        new = run_once(cfg)
+    assert new == "2026-06-20"
+    from watcher.state_store import load_state
+    # 상태는 여전히 마감(None) 그대로여야 한다 (날짜로 갱신되면 영영 누락됨).
+    assert load_state(cfg.state_file).get("availableStartDate") is None
+
+
+def test_run_once_corrupt_state_seeds_silently(tmp_path):
+    cfg = _cfg(tmp_path)
+    # 손상된 상태 파일: 첫 실행처럼 조용히 시드만 하고 알림은 보내지 않아야 한다.
+    with open(cfg.state_file, "w", encoding="utf-8") as f:
+        f.write("{ not valid json")
+    with patch("watcher.main.fetch_available_start_date", return_value="2026-06-20"), \
+         patch("watcher.main.send_telegram", return_value=True) as send:
+        new = run_once(cfg)
+    assert new is None
+    assert not send.called
+
+
 class _StopLoop(Exception):
     """무한 루프를 제어된 시점에 빠져나오기 위한 센티넬."""
 

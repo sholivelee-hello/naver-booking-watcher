@@ -24,3 +24,8 @@ def test_alerts_when_earlier_date_appears():
 def test_none_when_closes_again():
     # 가능했다가 다시 마감(None) → 알림 없음
     assert detect_new_availability("2026-06-20", None) is None
+
+
+def test_alerts_when_later_date_appears():
+    # 더 빠르든 늦든 '다른 날짜가 나오면 무조건' 알림 (대부분 만석이라 기회)
+    assert detect_new_availability("2026-06-20", "2026-07-15") == "2026-07-15"
