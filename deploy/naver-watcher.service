@@ -1,0 +1,16 @@
+[Unit]
+Description=Naver Booking Availability Watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/naver-watcher
+EnvironmentFile=/opt/naver-watcher/.env
+ExecStart=/opt/naver-watcher/venv/bin/python -m watcher.main
+Environment=PYTHONPATH=/opt/naver-watcher/src
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
