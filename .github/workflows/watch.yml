@@ -2,7 +2,7 @@ name: 네이버 예약 빈자리 감시
 
 on:
   schedule:
-    # 한 회차가 ~50분 동안 60초 간격으로 폴링한다(긴 단일 잡).
+    # 한 회차가 ~50분 동안 12초 간격으로 폴링한다(긴 단일 잡).
     # cron 은 5분마다 트리거하지만 아래 concurrency 직렬화 때문에 실제로는
     # "대기 중 회차" 1개만 쌓인다. 그 대기 회차가 현재 회차 종료(또는 크래시)
     # 즉시 이어받으므로, 공백은 회차 전환 시 러너 부팅 시간(~1분)뿐이다.
@@ -35,13 +35,13 @@ jobs:
       - name: 의존성 설치
         run: pip install -r requirements.txt
 
-      - name: 감시 (~50분간 60초 간격)
+      - name: 감시 (~50분간 12초 간격)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NAVER_BUSINESS_ID: '597072'
           NAVER_BIZ_ITEM_ID: '5011045'
-          POLL_INTERVAL_SECONDS: '60'
+          POLL_INTERVAL_SECONDS: '12'
           STATE_FILE: state/state.json
           PYTHONPATH: src
         run: python -m watcher.main --minutes 50

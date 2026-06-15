@@ -1,6 +1,6 @@
 # 네이버 예약 빈자리 감시 → 텔레그램 알림
 
-네이버 예약 페이지를 60초마다 확인해, 예약이 꽉 차 있던 항목에 자리가
+네이버 예약 페이지를 12초마다 확인해, 예약이 꽉 차 있던 항목에 자리가
 생기면(= 예약 가능한 날짜가 나타나면) 텔레그램으로 즉시 알려줍니다.
 
 > 감지 신호: 네이버 `bizItem.availableStartDate`. 자리가 전부 차 있으면
@@ -28,7 +28,7 @@ PYTHONPATH=src python -m watcher.main
 ## 2-0. GitHub Actions로 24시간 실행 (서버·카드 불필요, 무료, ~1분 간격)
 
 **공개(public) 저장소**에 올리면 GitHub Actions가 무제한 무료로 돌아간다.
-워크플로우 한 회차가 ~50분 동안 60초 간격으로 확인하고, `concurrency` 직렬화로
+워크플로우 한 회차가 ~50분 동안 12초 간격으로 확인하고, `concurrency` 직렬화로
 대기 중인 다음 회차가 현재 회차 종료(또는 크래시) 즉시 이어받는다.
 공백은 회차 전환 시 러너 부팅 시간(~1분)뿐이라 **사실상 24시간 연속 감시**가
 된다. 컴퓨터가 꺼져 있어도 동작.
@@ -111,5 +111,5 @@ journalctl -u naver-watcher -f           # 로그 실시간 보기
 | TELEGRAM_CHAT_ID | 알림 받을 chat id | (필수) |
 | NAVER_BUSINESS_ID | 사업장 id | (필수) |
 | NAVER_BIZ_ITEM_ID | 예약 항목 id | (필수) |
-| POLL_INTERVAL_SECONDS | 확인 주기(초) | 60 |
+| POLL_INTERVAL_SECONDS | 확인 주기(초) | 60 (워크플로 기본값은 12) |
 | STATE_FILE | 상태 저장 파일 | state.json |
